@@ -1,8 +1,11 @@
+// Card sets for different difficulty levels
 const allLetters = {
     8: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '1', '2', '3', '4', '5', '6', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '1', '2', '3', '4', '5', '6'],
     4: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'],
     6: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R']
 };
+
+// Game state variables
 let letters = [];
 let shuffledLetters = [];
 let flippedCards = [];
@@ -16,27 +19,79 @@ function getDifficulty() {
     return document.getElementById('difficulty').value;
 }
 
+// Save game state to localStorage
+function saveGameState() {
+    const gameState = {
+        difficulty: getDifficulty(),
+        shuffledLetters,
+        matchedCards,
+        moves,
+        time
+    };
+    //Using sessionStorage so tabs don't share the same saved game
+    sessionStorage.setItem('memoryGameState', JSON.stringify(gameState));
+}
+
+// Retrieve saved game state from localStorage
+function loadGameState() {
+    const saved = sessionStorage.getItem('memoryGameState');
+    if (saved) {
+        try {
+            return JSON.parse(saved);
+        } catch (e) {
+            return null;
+        }
+    }
+    return null;
+}
+
+// Initialize or restore game
 function newGame() {
-    const difficulty = getDifficulty();
-    letters = allLetters[difficulty];
+    const savedState = loadGameState();
+    let difficulty;
+
+    if (savedState) {
+        // Restore previous game
+        difficulty = savedState.difficulty;
+        shuffledLetters = savedState.shuffledLetters;
+        matchedCards = savedState.matchedCards;
+        moves = savedState.moves;
+        time = savedState.time;
+        document.getElementById('difficulty').value = difficulty;
+    } else {
+        // Start new game
+        difficulty = getDifficulty();
+        letters = allLetters[difficulty];
+        shuffledLetters = [...letters].sort(() => Math.random() - 0.5);
+        matchedCards = [];
+        moves = 0;
+        time = 0;
+    }
     
     flippedCards = [];
-    matchedCards = [];
-    moves = 0;
-    time = 0;
     canFlip = true;
+    letters = allLetters[difficulty];
 
     clearInterval(timerInterval);
 
-    document.getElementById('moves').textContent = '0';
-    document.getElementById('timer').textContent = '0';
+    document.getElementById('global-moves-display').textContent = moves;
+    document.getElementById('timer').textContent = time;
 
-    shuffledLetters = [...letters].sort(() => Math.random() - 0.5);
-    
     updateGridLayout(difficulty);
     createCards();
 
-    startTimer();
+    // Show matched cards visually
+    matchedCards.forEach(index => {
+        const card = document.querySelector(`[data-index="${index}"]`);
+        if (card) {
+            card.classList.add('matched');
+            card.classList.add('flipped');
+        }
+    });
+
+    if (matchedCards.length < letters.length) {
+        startTimer();
+    }
 }
 
 function updateGridLayout(difficulty) {
@@ -71,6 +126,7 @@ function createCards() {
     });
 }
 
+// Handle card flip and check for matches
 function flipCard(e) {
     if (!canFlip) return;
 
@@ -86,11 +142,14 @@ function flipCard(e) {
 
     if (flippedCards.length === 2) {
         moves++;
-        document.getElementById('moves').textContent = moves;
+        document.getElementById('global-moves-display').textContent = moves;
+        incrementGlobalMoves();
+        saveGameState();
         checkMatch();
     }
 }
 
+// Compare flipped cards
 function checkMatch() {
     canFlip = false;
 
@@ -99,6 +158,7 @@ function checkMatch() {
     const secondLetter = shuffledLetters[secondIndex];
 
     if (firstLetter === secondLetter) {
+        // If cards match keep them flipped
         matchedCards.push(firstIndex, secondIndex);
 
         document.querySelector(`[data-index="${firstIndex}"]`).classList.add('matched');
@@ -107,6 +167,7 @@ function checkMatch() {
         flippedCards = [];
         canFlip = true;
 
+        // Check for win
         if (matchedCards.length === letters.length) {
             clearInterval(timerInterval);
             setTimeout(() => {
@@ -114,6 +175,7 @@ function checkMatch() {
             }, 500);
         }
     } else {
+        // If no match flip back after 1 second
         setTimeout(() => {
             document.querySelector(`[data-index="${firstIndex}"]`).classList.remove('flipped');
             document.querySelector(`[data-index="${secondIndex}"]`).classList.remove('flipped');
@@ -127,7 +189,34 @@ function startTimer() {
     timerInterval = setInterval(() => {
         time++;
         document.getElementById('timer').textContent = time;
+        saveGameState();
     }, 1000);
 }
+
+// Clear saved game when restarting
+function clearSavedGame() {
+    localStorage.removeItem('memoryGameState');
+}
+
+const GLOBAL_MOVES_KEY = 'total_moves_all_tabs';
+
+function incrementGlobalMoves() {
+    let globalMoves = parseInt(localStorage.getItem(GLOBAL_MOVES_KEY) || '0');
+    globalMoves++;
+    localStorage.setItem(GLOBAL_MOVES_KEY, globalMoves);
+    updateGlobalDisplay(globalMoves);
+}
+
+function updateGlobalDisplay(value) {
+    const el = document.getElementById('global-moves-display');
+    if (el) el.textContent = value;
+}
+
+// Sync UI when other tabs update the count
+window.addEventListener('storage', (e) => {
+    if (e.key === GLOBAL_MOVES_KEY) {
+        updateGlobalDisplay(e.newValue);
+    }
+});
 
 document.addEventListener('DOMContentLoaded', newGame);
